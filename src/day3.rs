@@ -58,8 +58,24 @@ fn part1(rucksacks: &[Rucksack]) -> u64 {
         .sum()
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(rucksacks: &[Rucksack]) -> u64 {
+    let mut sum = 0;
+
+    for group in rucksacks.chunks(3) {
+        let g1 = group[0].items.iter().copied().collect::<HashSet<_>>();
+        let g2 = group[1].items.iter().copied().collect::<HashSet<_>>();
+
+        sum += group[2]
+            .items
+            .iter()
+            .copied()
+            .find(|c| g1.contains(c) && g2.contains(c))
+            .map(Priority::priority)
+            .map(u64::from)
+            .unwrap_or_default();
+    }
+
+    sum
 }
 
 fn main() -> Result<()> {
@@ -79,7 +95,7 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&rucksacks);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
