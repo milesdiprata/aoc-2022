@@ -24,6 +24,7 @@ enum Outcome {
 #[derive(Debug)]
 struct StrategyGuide {
     rounds: Vec<(Shape, Shape)>,
+    desired_outcomes: Vec<(Shape, Outcome)>,
 }
 
 impl TryFrom<char> for Shape {
@@ -39,14 +40,30 @@ impl TryFrom<char> for Shape {
     }
 }
 
+impl TryFrom<char> for Outcome {
+    type Error = Error;
+
+    fn try_from(outcome: char) -> Result<Self> {
+        match outcome {
+            'X' => Ok(Self::Loss),
+            'Y' => Ok(Self::Draw),
+            'Z' => Ok(Self::Win),
+            _ => bail!("invalid outcome '{outcome}'"),
+        }
+    }
+}
+
 impl FromStr for StrategyGuide {
     type Err = Error;
 
     fn from_str(guide: &str) -> Result<Self> {
-        let mut rounds = Vec::with_capacity(guide.lines().count());
+        let len = guide.lines().count();
+
+        let mut rounds = Vec::with_capacity(len);
+        let mut desired_outcomes = Vec::with_capacity(len);
 
         for round in guide.lines() {
-            let (opponent, me) = round
+            let (opponent, lhs) = round
                 .split_once(' ')
                 .ok_or_else(|| anyhow!("invalid round '{round}'"))?;
 
@@ -55,16 +72,22 @@ impl FromStr for StrategyGuide {
                 .flatten()
                 .map(Shape::try_from)
                 .ok_or_else(|| anyhow!("invalid opponent strategy '{opponent}'"))??;
-            let me = (me.len() == 1)
-                .then_some(me.chars().next())
+            let lhs = (lhs.len() == 1)
+                .then_some(lhs.chars().next())
                 .flatten()
-                .map(Shape::try_from)
-                .ok_or_else(|| anyhow!("invalid me strategy '{me}'"))??;
+                .ok_or_else(|| anyhow!("invalid LHS '{lhs}'"))?;
+
+            let me = Shape::try_from(lhs)?;
+            let outcome = Outcome::try_from(lhs)?;
 
             rounds.push((opponent, me));
+            desired_outcomes.push((opponent, outcome));
         }
 
-        Ok(Self { rounds })
+        Ok(Self {
+            rounds,
+            desired_outcomes,
+        })
     }
 }
 
@@ -98,6 +121,15 @@ impl Outcome {
             Self::Win => 6,
         }
     }
+
+    const fn choose_shape(self, opponent: Shape) -> Shape {
+        match (self, opponent) {
+            (Self::Loss, Shape::Scissors) | (Self::Win, Shape::Rock) => Shape::Paper,
+            (Self::Loss, Shape::Rock) | (Self::Win, Shape::Paper) => Shape::Scissors,
+            (Self::Loss, Shape::Paper) | (Self::Win, Shape::Scissors) => Shape::Rock,
+            (Self::Draw, _) => opponent,
+        }
+    }
 }
 
 fn part1(guide: &StrategyGuide) -> u64 {
@@ -109,8 +141,13 @@ fn part1(guide: &StrategyGuide) -> u64 {
         .sum()
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(guide: &StrategyGuide) -> u64 {
+    guide
+        .desired_outcomes
+        .iter()
+        .map(|&(opponent, outcome)| outcome.choose_shape(opponent).score() + outcome.score())
+        .map(u64::from)
+        .sum()
 }
 
 fn main() -> Result<()> {
@@ -127,10 +164,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&guide);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 10_835);
     };
 
     Ok(())
