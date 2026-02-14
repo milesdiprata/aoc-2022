@@ -50,6 +50,10 @@ impl Range {
     const fn is_fully_contained(&self, other: &Self) -> bool {
         other.min <= self.min && self.max <= other.max
     }
+
+    const fn is_overlapping(&self, other: &Self) -> bool {
+        self.min <= other.max && other.min <= self.max
+    }
 }
 
 impl Section {
@@ -57,17 +61,25 @@ impl Section {
         let (first, second) = &self.pair;
         first.is_fully_contained(second) || second.is_fully_contained(first)
     }
+
+    const fn is_overlapping(&self) -> bool {
+        let (first, second) = &self.pair;
+        first.is_overlapping(second)
+    }
 }
 
 fn part1(sections: &[Section]) -> usize {
     sections
         .iter()
-        .filter(|section| section.is_any_fully_contained())
+        .filter(|&section| section.is_any_fully_contained())
         .count()
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(sections: &[Section]) -> usize {
+    sections
+        .iter()
+        .filter(|&section| section.is_overlapping())
+        .count()
 }
 
 fn main() -> Result<()> {
@@ -82,16 +94,16 @@ fn main() -> Result<()> {
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
-        assert_eq!(part1, 0);
+        assert_eq!(part1, 450);
     };
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&sections);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 837);
     };
 
     Ok(())
