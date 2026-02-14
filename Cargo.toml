@@ -9,3 +9,7 @@ anyhow = "1.0.101"
 [profile.release]
 opt-level = 3
 lto = true
+
+[[bin]]
+name = "day1"
+path = "src/day1.rs"
