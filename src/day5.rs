@@ -7,11 +7,24 @@ use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Instruction {
     quantity: usize,
     from: usize,
     to: usize,
+}
+
+trait CrateMover {
+    fn move_crates(stacks: &mut Vec<Vec<char>>, instruction: &Instruction);
+}
+
+struct CrateMover9000;
+struct CrateMover9001;
+
+#[derive(Clone, Debug)]
+struct Puzzle {
+    stacks: Vec<Vec<char>>,
+    instructions: Vec<Instruction>,
 }
 
 impl FromStr for Instruction {
@@ -32,62 +45,79 @@ impl FromStr for Instruction {
     }
 }
 
-fn parse() -> Result<(Vec<Vec<char>>, Vec<Instruction>)> {
-    let input = fs::read_to_string("in/day5.txt")?;
-    let (crates, instructions) = input
-        .split_once("\n\n")
-        .ok_or_else(|| anyhow!("invalid input"))?;
+impl FromStr for Puzzle {
+    type Err = Error;
 
-    let mut crates = crates.lines().rev();
-    let len = crates
-        .next()
-        .ok_or_else(|| anyhow!("missing stacks in input"))?
-        .split_ascii_whitespace()
-        .count();
+    fn from_str(input: &str) -> Result<Self> {
+        let (crates, instructions) = input
+            .split_once("\n\n")
+            .ok_or_else(|| anyhow!("invalid input"))?;
 
-    let mut stacks = vec![vec![]; len];
-    for line in crates {
-        for (i, chunk) in line.as_bytes().chunks(4).enumerate() {
-            if chunk[0] == b'[' {
-                stacks[i].push(chunk[1] as char);
+        let mut crates = crates.lines().rev();
+        let len = crates
+            .next()
+            .ok_or_else(|| anyhow!("missing stacks in input"))?
+            .split_ascii_whitespace()
+            .count();
+
+        let mut stacks = vec![vec![]; len];
+        for line in crates {
+            for (i, chunk) in line.as_bytes().chunks(4).enumerate() {
+                if chunk[0] == b'[' {
+                    stacks[i].push(chunk[1] as char);
+                }
+            }
+        }
+
+        let instructions = instructions
+            .lines()
+            .map(str::parse)
+            .collect::<Result<_>>()?;
+
+        Ok(Self {
+            stacks,
+            instructions,
+        })
+    }
+}
+
+impl CrateMover for CrateMover9000 {
+    fn move_crates(stacks: &mut Vec<Vec<char>>, instruction: &Instruction) {
+        for _ in 0..instruction.quantity {
+            if let Some(c) = stacks[instruction.from].pop() {
+                stacks[instruction.to].push(c);
             }
         }
     }
-
-    let instructions = instructions
-        .lines()
-        .map(str::parse)
-        .collect::<Result<_>>()?;
-
-    Ok((stacks, instructions))
 }
 
-fn part1(stacks: &mut [Vec<char>], instructions: &[Instruction]) -> String {
-    for &Instruction { quantity, from, to } in instructions {
-        for _ in 0..quantity {
-            if let Some(c) = stacks[from].pop() {
-                stacks[to].push(c);
-            }
-        }
+impl CrateMover for CrateMover9001 {
+    fn move_crates(stacks: &mut Vec<Vec<char>>, instruction: &Instruction) {
+        let from = &mut stacks[instruction.from];
+        let crates = from.split_off(from.len() - instruction.quantity);
+        stacks[instruction.to].extend(crates);
     }
-
-    stacks
-        .iter()
-        .filter_map(|stack| stack.last())
-        .copied()
-        .collect()
 }
 
-fn part2() -> u64 {
-    todo!()
+impl Puzzle {
+    fn execute<M: CrateMover>(mut self) -> String {
+        for instruction in &self.instructions {
+            M::move_crates(&mut self.stacks, instruction);
+        }
+
+        self.stacks
+            .iter()
+            .filter_map(|stack| stack.last())
+            .collect()
+    }
 }
 
 fn main() -> Result<()> {
-    let (mut stacks, instructions) = self::parse()?;
+    let puzzle = Puzzle::from_str(&fs::read_to_string("in/day5.txt")?)?;
 
     {
         let start = Instant::now();
-        let part1 = self::part1(&mut stacks, &instructions);
+        let part1 = puzzle.clone().execute::<CrateMover9000>();
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
@@ -96,11 +126,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = puzzle.execute::<CrateMover9001>();
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, "GGNPJBTTR");
     };
 
     Ok(())
