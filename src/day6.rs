@@ -4,24 +4,29 @@ use std::time::Instant;
 
 use anyhow::Result;
 
-fn part1(buffer: &str) -> Option<usize> {
-    buffer
-        .as_bytes()
-        .windows(4)
-        .position(|w| w.iter().copied().collect::<HashSet<_>>().len() == 4)
-        .map(|i| i + 4)
+#[derive(Debug)]
+struct Signal {
+    buffer: String,
 }
 
-fn part2() -> u64 {
-    todo!()
+impl Signal {
+    fn find_unique_sequence(&self, len: usize) -> Option<usize> {
+        self.buffer
+            .as_bytes()
+            .windows(len)
+            .position(|w| w.iter().copied().collect::<HashSet<_>>().len() == len)
+            .map(|i| i + len)
+    }
 }
 
 fn main() -> Result<()> {
-    let buffer = fs::read_to_string("in/day6.txt")?;
+    let signal = Signal {
+        buffer: fs::read_to_string("in/day6.txt")?,
+    };
 
     {
         let start = Instant::now();
-        let part1 = self::part1(&buffer).unwrap_or_default();
+        let part1 = signal.find_unique_sequence(4).unwrap_or_default();
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
@@ -30,7 +35,7 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = signal.find_unique_sequence(14).unwrap_or_default();
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
