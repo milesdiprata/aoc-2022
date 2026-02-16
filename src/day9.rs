@@ -24,10 +24,9 @@ struct Motion {
     steps: usize,
 }
 
-#[derive(Debug, Default)]
-struct Rope {
-    head: Pos,
-    tail: Pos,
+#[derive(Debug)]
+struct Rope<const N: usize> {
+    knots: [Pos; N],
 }
 
 impl TryFrom<char> for Dir {
@@ -63,7 +62,17 @@ impl FromStr for Motion {
     }
 }
 
-impl Rope {
+impl<const N: usize> Rope<N> {
+    fn new() -> Self {
+        Self {
+            knots: [Pos::default(); N],
+        }
+    }
+
+    const fn tail(&self) -> Pos {
+        self.knots[N - 1]
+    }
+
     fn update_head(mut self, dir: Dir) -> Self {
         let step = match dir {
             Dir::Up => Pos::up,
@@ -72,35 +81,34 @@ impl Rope {
             Dir::Left => Pos::left,
         };
 
-        self.head = step(self.head);
+        self.knots[0] = step(self.knots[0]);
 
-        let dx = self.head.x() - self.tail.x();
-        let dy = self.head.y() - self.tail.y();
+        for i in 1..N {
+            let (head, tail) = (self.knots[i - 1], self.knots[i]);
+            let dx = head.x() - tail.x();
+            let dy = head.y() - tail.y();
 
-        if dx.abs() > 1 || dy.abs() > 1 {
-            self.tail = Pos::new(self.tail.x() + dx.signum(), self.tail.y() + dy.signum());
+            if dx.abs() > 1 || dy.abs() > 1 {
+                self.knots[i] = Pos::new(tail.x() + dx.signum(), tail.y() + dy.signum());
+            }
         }
 
         self
     }
 }
 
-fn part1(motions: &[Motion]) -> usize {
-    let mut rope = Rope::default();
-    let mut visited = HashSet::from([rope.tail]);
+fn solve<const N: usize>(motions: &[Motion]) -> usize {
+    let mut rope = Rope::<N>::new();
+    let mut visited = HashSet::from([rope.tail()]);
 
     for motion in motions {
         for _ in 0..motion.steps {
             rope = rope.update_head(motion.dir);
-            visited.insert(rope.tail);
+            visited.insert(rope.tail());
         }
     }
 
     visited.len()
-}
-
-fn part2() -> u64 {
-    todo!()
 }
 
 fn main() -> Result<()> {
@@ -111,7 +119,7 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part1 = self::part1(&motions);
+        let part1 = self::solve::<2>(&motions);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
@@ -120,11 +128,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::solve::<10>(&motions);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 2_327);
     };
 
     Ok(())
