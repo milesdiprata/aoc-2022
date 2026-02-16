@@ -73,6 +73,36 @@ impl HeightMap {
                 true
             })
     }
+
+    fn score(&self, pos: Pos) -> usize {
+        let Some(height) = self.get(pos) else {
+            return 0;
+        };
+
+        [Pos::up, Pos::right, Pos::down, Pos::left]
+            .iter()
+            .map(|step| {
+                let mut dist = 0;
+                let mut curr = pos;
+
+                while let Some(next) = step(curr) {
+                    let Some(height_next) = self.get(next) else {
+                        break;
+                    };
+
+                    dist += 1;
+
+                    if height_next >= height {
+                        break;
+                    }
+
+                    curr = next;
+                }
+
+                dist
+            })
+            .product()
+    }
 }
 
 fn part1(heights: &HeightMap) -> usize {
@@ -82,8 +112,12 @@ fn part1(heights: &HeightMap) -> usize {
         .count()
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(heights: &HeightMap) -> usize {
+    (0..heights.width)
+        .flat_map(|x| (0..heights.height).map(move |y| Pos::new(x, y)))
+        .map(|pos| heights.score(pos))
+        .max()
+        .unwrap_or_default()
 }
 
 fn main() -> Result<()> {
@@ -100,11 +134,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&heights);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        // assert_eq!(part2, 259308);
+        assert_eq!(part2, 259_308);
     };
 
     Ok(())
