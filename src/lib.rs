@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Pos<T> {
     x: T,
     y: T,
@@ -8,6 +8,7 @@ impl<T> Pos<T>
 where
     T: Copy,
 {
+    #[must_use]
     pub const fn new(x: T, y: T) -> Self {
         Self { x, y }
     }
@@ -20,6 +21,40 @@ where
     #[must_use]
     pub const fn y(self) -> T {
         self.y
+    }
+}
+
+impl Pos<i64> {
+    #[must_use]
+    pub const fn up(self) -> Self {
+        Self {
+            y: self.y - 1,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub const fn right(self) -> Self {
+        Self {
+            x: self.x + 1,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub const fn down(self) -> Self {
+        Self {
+            y: self.y + 1,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub const fn left(self) -> Self {
+        Self {
+            x: self.x - 1,
+            ..self
+        }
     }
 }
 
