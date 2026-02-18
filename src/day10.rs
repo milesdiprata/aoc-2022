@@ -54,18 +54,31 @@ impl Cpu {
 }
 
 fn part1(program: &[Instruction]) -> i32 {
-    let mut cpu = Cpu::new();
-    let snapshots = cpu.execute(program);
+    let snapshots = Cpu::new().execute(program);
 
     #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
     [20, 60, 100, 140, 180, 220]
-        .iter()
-        .map(|&c| c as i32 * snapshots[c - 1])
+        .into_iter()
+        .map(|c| c as i32 * snapshots[c - 1])
         .sum()
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(program: &[Instruction]) -> String {
+    let snapshots = Cpu::new().execute(program);
+    let mut pixels = String::with_capacity(snapshots.len() + 6);
+
+    for (cycle, x) in snapshots.into_iter().enumerate() {
+        #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+        let col = (cycle % 40) as i32;
+
+        if col == 0 && cycle > 0 {
+            pixels.push('\n');
+        }
+
+        pixels.push(if (x - col).abs() <= 1 { '#' } else { '.' });
+    }
+
+    pixels
 }
 
 fn main() -> Result<()> {
@@ -85,11 +98,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&program);
         let elapsed = Instant::now().duration_since(start);
 
-        println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        println!("Part 2 ({elapsed:?}):");
+        println!("{part2}");
     };
 
     Ok(())
