@@ -23,31 +23,32 @@ enum Operand {
     Val(u64),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Operation {
     lhs: Operand,
     rhs: Operand,
     op: Operator,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Test {
     divisible_by: u64,
     pass: usize,
     fail: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Monkey {
     items: VecDeque<u64>,
     operation: Operation,
     test: Test,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Game {
     monkeys: Vec<Monkey>,
     inspections: Vec<usize>,
+    divisible_by_lcm: u64,
 }
 
 impl TryFrom<char> for Operator {
@@ -180,9 +181,16 @@ impl FromStr for Game {
             .collect::<Result<Vec<_>>>()?;
         let inspections = vec![0; monkeys.len()];
 
+        // Note: all `divisible_by` values are prime, so no need to compute LCM
+        let divisible_by_lcm = monkeys
+            .iter()
+            .map(|monkey| monkey.test.divisible_by)
+            .product();
+
         Ok(Self {
             monkeys,
             inspections,
+            divisible_by_lcm,
         })
     }
 }
@@ -198,18 +206,21 @@ impl Operator {
 
 impl Operation {
     const fn apply(&self, old: u64) -> u64 {
-        match (self.lhs, self.rhs) {
-            (Operand::Old, Operand::Old) => self.op.apply(old, old),
-            (Operand::Old, Operand::Val(rhs)) => self.op.apply(old, rhs),
-            (Operand::Val(lhs), Operand::Old) => self.op.apply(lhs, old),
-            (Operand::Val(lhs), Operand::Val(rhs)) => self.op.apply(lhs, rhs),
-        }
+        let (lhs, rhs) = match (self.lhs, self.rhs) {
+            (Operand::Old, Operand::Old) => (old, old),
+            (Operand::Old, Operand::Val(rhs)) => (old, rhs),
+            (Operand::Val(lhs), Operand::Old) => (lhs, old),
+            (Operand::Val(lhs), Operand::Val(rhs)) => (lhs, rhs),
+        };
+
+        self.op.apply(lhs, rhs)
     }
 }
 
 impl Monkey {
-    const fn inspect(&self, item: u64) -> u64 {
-        self.operation.apply(item) / 3
+    const fn inspect(&self, item: u64, divide: bool, lcm: u64) -> u64 {
+        let worry = self.operation.apply(item);
+        if divide { worry / 3 } else { worry % lcm }
     }
 
     const fn test(&self, item: u64) -> usize {
@@ -222,53 +233,53 @@ impl Monkey {
 }
 
 impl Game {
-    fn play_round(&mut self) {
+    fn play_round(mut self, divide: bool) -> Self {
         for i in 0..self.monkeys.len() {
             while let Some(item) = self.monkeys[i].items.pop_front() {
-                let inspected = self.monkeys[i].inspect(item);
+                let inspected = self.monkeys[i].inspect(item, divide, self.divisible_by_lcm);
                 let j = self.monkeys[i].test(inspected);
                 self.monkeys[j].items.push_back(inspected);
                 self.inspections[i] += 1;
             }
         }
-    }
-}
 
-fn part1(game: &mut Game) -> usize {
-    const ROUNDS: usize = 20;
-    const MOST_ACTIVE_MONKEYS: usize = 2;
-
-    for _ in 0..ROUNDS {
-        game.play_round();
+        self
     }
 
-    let mut inspections = BinaryHeap::with_capacity(MOST_ACTIVE_MONKEYS + 1);
-    for &inspection in &game.inspections {
-        inspections.push(Reverse(inspection));
+    fn monkey_business(&self) -> usize {
+        const MOST_ACTIVE_MONKEYS: usize = 2;
 
-        if inspections.len() > MOST_ACTIVE_MONKEYS {
-            inspections.pop();
+        let mut inspections = BinaryHeap::with_capacity(MOST_ACTIVE_MONKEYS + 1);
+        for &inspection in &self.inspections {
+            inspections.push(Reverse(inspection));
+
+            if inspections.len() > MOST_ACTIVE_MONKEYS {
+                inspections.pop();
+            }
         }
-    }
 
-    inspections
-        .into_iter()
-        .map(|Reverse(inspection)| inspection)
-        .product()
+        inspections
+            .into_iter()
+            .map(|Reverse(inspection)| inspection)
+            .product()
+    }
 }
 
-fn part2() -> u64 {
-    todo!()
+fn simulate(mut game: Game, rounds: usize, divide: bool) -> usize {
+    for _ in 0..rounds {
+        game = game.play_round(divide);
+    }
+
+    game.monkey_business()
 }
 
 fn main() -> Result<()> {
-    let mut game = Game::from_str(&fs::read_to_string("in/day11.txt")?)?;
-
-    dbg!(&game);
+    let game = Game::from_str(&fs::read_to_string("in/day11.txt")?)?;
 
     {
+        let game = game.clone();
         let start = Instant::now();
-        let part1 = self::part1(&mut game);
+        let part1 = self::simulate(game, 20, true);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
@@ -277,11 +288,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::simulate(game, 10_000, false);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 32_333_418_600);
     };
 
     Ok(())
