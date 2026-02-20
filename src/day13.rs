@@ -8,7 +8,7 @@ use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Val {
     Int(u8),
     List(Vec<Val>),
@@ -145,8 +145,26 @@ fn part1(pairs: &[Pair]) -> usize {
         .sum()
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(pairs: Vec<Pair>) -> usize {
+    let dividers = [
+        Val::List(vec![Val::List(vec![Val::Int(2)])]),
+        Val::List(vec![Val::List(vec![Val::Int(6)])]),
+    ];
+
+    let mut packets = pairs
+        .into_iter()
+        .flat_map(|Pair(a, b)| [a, b])
+        .chain(dividers.clone())
+        .collect::<Vec<_>>();
+
+    packets.sort();
+
+    dividers
+        .iter()
+        .map(|divider| packets.iter().position(|packet| packet == divider))
+        .map(Option::unwrap_or_default)
+        .map(|idx| idx + 1)
+        .product()
 }
 
 fn main() -> Result<()> {
@@ -166,11 +184,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(pairs);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 23_111);
     };
 
     Ok(())
