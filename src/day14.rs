@@ -41,7 +41,7 @@ impl std::fmt::Display for Cave {
                 } else if self.rocks.contains(&pos) {
                     write!(f, "#")?;
                 } else if self.sand.contains(&pos) {
-                    write!(f, "o");
+                    write!(f, "o")?;
                 } else {
                     write!(f, ".")?;
                 }
@@ -136,10 +136,14 @@ impl Cave {
         self.is_air(pos) && pos.y() > self.y_max
     }
 
+    fn is_floor(&self, pos: Pos<i32>) -> bool {
+        self.is_air(pos) && pos.y() >= self.y_max + 2
+    }
+
     fn drop_sand(&mut self) -> bool {
         let mut sand = Self::SOURCE;
 
-        while !self.is_abyss(sand) {
+        while !self.is_abyss(sand.down()) {
             if self.is_air(sand.down()) {
                 sand = sand.down();
             } else if self.is_air(sand.down().left()) {
@@ -154,6 +158,23 @@ impl Cave {
 
         false
     }
+
+    fn drop_sand_until_source_blocked(&mut self) -> bool {
+        let mut sand = Self::SOURCE;
+
+        loop {
+            if self.is_air(sand.down()) && !self.is_floor(sand.down()) {
+                sand = sand.down();
+            } else if self.is_air(sand.down().left()) && !self.is_floor(sand.down().left()) {
+                sand = sand.down().left();
+            } else if self.is_air(sand.down().right()) && !self.is_floor(sand.down().right()) {
+                sand = sand.down().right();
+            } else {
+                self.sand.insert(sand);
+                return sand != Self::SOURCE;
+            }
+        }
+    }
 }
 
 fn part1(cave: &mut Cave) -> usize {
@@ -161,8 +182,9 @@ fn part1(cave: &mut Cave) -> usize {
     cave.sand.len()
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(cave: &mut Cave) -> usize {
+    while cave.drop_sand_until_source_blocked() {}
+    cave.sand.len()
 }
 
 fn main() -> Result<()> {
@@ -179,11 +201,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&mut cave);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 27_601);
     };
 
     Ok(())
