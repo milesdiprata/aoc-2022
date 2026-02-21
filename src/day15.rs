@@ -50,11 +50,11 @@ impl Sensor {
         let dy = (self.pos.y() - y).abs();
         let remaining = dist - dy;
 
-        if remaining < 0 {
-            return None;
+        if remaining >= 0 {
+            Some((self.pos.x() - remaining, self.pos.x() + remaining))
+        } else {
+            None
         }
-
-        Some((self.pos.x() - remaining, self.pos.x() + remaining))
     }
 }
 
@@ -110,8 +110,32 @@ fn part1(sensors: &[Sensor]) -> usize {
     coverage_at_y - beacons_at_y
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(sensors: &[Sensor]) -> i64 {
+    const MAX: i32 = 4_000_000;
+
+    for y in 0..=MAX {
+        let intervals = self::merge(
+            sensors
+                .iter()
+                .filter_map(|sensor| sensor.coverage_at_y(y))
+                .collect(),
+        );
+
+        let mut x = 0;
+        for (start, end) in intervals {
+            if start > x {
+                return i64::from(x) * i64::from(MAX) + i64::from(y);
+            }
+
+            x = x.max(end + 1);
+
+            if x > MAX {
+                break;
+            }
+        }
+    }
+
+    unreachable!()
 }
 
 fn main() -> Result<()> {
@@ -131,11 +155,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&sensors);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 13_734_006_908_372);
     };
 
     Ok(())
