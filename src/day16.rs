@@ -116,8 +116,9 @@ impl TryFrom<&[Valve]> for Cave {
 }
 
 impl Cave {
-    fn dfs(&self, time: u32, cur: usize, opened: u32) -> u32 {
-        let mut max = 0;
+    fn dfs(&self, time: u32, cur: usize, opened: u32, pressure: u32, best: &mut HashMap<u32, u32>) {
+        let entry = best.entry(opened).or_default();
+        *entry = (*entry).max(pressure);
 
         for next in 0..self.rates.len() {
             if opened & (1 << next) != 0 || self.rates[next] == 0 {
@@ -130,17 +131,33 @@ impl Cave {
             }
 
             let time_remaining = time - time_to_next;
-            let pressure_released = self.rates[next] * time_remaining;
+            let released = self.rates[next] * time_remaining;
             let opened = opened | (1 << next);
 
-            max = max.max(pressure_released + self.dfs(time_remaining, next, opened));
+            self.dfs(time_remaining, next, opened, pressure + released, best);
         }
-
-        max
     }
 
     fn max_pressure(&self, time: u32) -> u32 {
-        self.dfs(time, self.start, 0)
+        let mut best = HashMap::new();
+        self.dfs(time, self.start, 0, 0, &mut best);
+        best.into_values().max().unwrap_or_default()
+    }
+
+    fn max_pressure_with_elephant(&self, time: u32) -> u32 {
+        let mut best = HashMap::new();
+        self.dfs(time, self.start, 0, 0, &mut best);
+
+        let mut max = 0;
+        for (&mask_a, &score_a) in &best {
+            for (&mask_b, &score_b) in &best {
+                if mask_a & mask_b == 0 {
+                    max = max.max(score_a + score_b);
+                }
+            }
+        }
+
+        max
     }
 }
 
@@ -149,8 +166,9 @@ fn part1(cave: &Cave) -> u32 {
     cave.max_pressure(TIME)
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(cave: &Cave) -> u32 {
+    const TIME: u32 = 26;
+    cave.max_pressure_with_elephant(TIME)
 }
 
 fn main() -> Result<()> {
@@ -167,11 +185,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&cave);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 2_520);
     };
 
     Ok(())
