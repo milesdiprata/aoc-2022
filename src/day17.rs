@@ -1,4 +1,7 @@
+use std::array;
+use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::collections::hash_map::Entry;
 use std::fs;
 use std::ops::Range;
 use std::time::Instant;
@@ -13,7 +16,7 @@ enum Jet {
     Right,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Row {
     bits: u8,
 }
@@ -21,12 +24,25 @@ struct Row {
 #[derive(Clone, Copy, Debug)]
 struct Rock {
     height: usize,
-    rows: [Row; 4],
+    rows: [Row; Self::LEN],
 }
 
 #[derive(Debug)]
 struct Chamber {
     rows: VecDeque<Row>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct StateKey {
+    rock: usize,
+    jet: usize,
+    rows: [Row; Self::LEN],
+}
+
+#[derive(Debug)]
+struct State {
+    rocks: usize,
+    height: usize,
 }
 
 impl std::fmt::Display for Jet {
@@ -102,7 +118,7 @@ impl TryFrom<char> for Jet {
 }
 
 impl Row {
-    const fn from(bits: u8) -> Self {
+    const fn new(bits: u8) -> Self {
         Self { bits }
     }
 
@@ -114,15 +130,16 @@ impl Row {
             Jet::Right => self.bits >> 1,
         };
 
-        let reverted = match jet {
+        let left_wall_collision = shifted & WALL != 0;
+        let right_wall_collision = match jet {
             Jet::Left => shifted >> 1,
             Jet::Right => shifted << 1,
-        };
+        } != self.bits;
 
-        if reverted == self.bits && shifted & WALL == 0 {
-            Some(Self::from(shifted))
-        } else {
+        if left_wall_collision || right_wall_collision {
             None
+        } else {
+            Some(Self::new(shifted))
         }
     }
 
@@ -156,6 +173,7 @@ impl Row {
 
 #[allow(clippy::unreadable_literal)]
 impl Rock {
+    const LEN: usize = 4;
     const VARIANTS: [Self; 5] = [
         Self::horizontal(),
         Self::plus(),
@@ -168,10 +186,10 @@ impl Rock {
         Self {
             height: 1,
             rows: [
-                Row::from(0b00011110),
-                Row::from(0b00000000),
-                Row::from(0b00000000),
-                Row::from(0b00000000),
+                Row::new(0b00011110),
+                Row::new(0b00000000),
+                Row::new(0b00000000),
+                Row::new(0b00000000),
             ],
         }
     }
@@ -180,10 +198,10 @@ impl Rock {
         Self {
             height: 3,
             rows: [
-                Row::from(0b00001000),
-                Row::from(0b00011100),
-                Row::from(0b00001000),
-                Row::from(0b00000000),
+                Row::new(0b00001000),
+                Row::new(0b00011100),
+                Row::new(0b00001000),
+                Row::new(0b00000000),
             ],
         }
     }
@@ -192,10 +210,10 @@ impl Rock {
         Self {
             height: 3,
             rows: [
-                Row::from(0b00000100),
-                Row::from(0b00000100),
-                Row::from(0b00011100),
-                Row::from(0b00000000),
+                Row::new(0b00000100),
+                Row::new(0b00000100),
+                Row::new(0b00011100),
+                Row::new(0b00000000),
             ],
         }
     }
@@ -204,10 +222,10 @@ impl Rock {
         Self {
             height: 4,
             rows: [
-                Row::from(0b00010000),
-                Row::from(0b00010000),
-                Row::from(0b00010000),
-                Row::from(0b00010000),
+                Row::new(0b00010000),
+                Row::new(0b00010000),
+                Row::new(0b00010000),
+                Row::new(0b00010000),
             ],
         }
     }
@@ -216,10 +234,10 @@ impl Rock {
         Self {
             height: 2,
             rows: [
-                Row::from(0b00011000),
-                Row::from(0b00011000),
-                Row::from(0b00000000),
-                Row::from(0b00000000),
+                Row::new(0b00011000),
+                Row::new(0b00011000),
+                Row::new(0b00000000),
+                Row::new(0b00000000),
             ],
         }
     }
@@ -310,10 +328,10 @@ impl Chamber {
         self.rows.len()
     }
 
-    fn drop_rock(&mut self, mut rock: Rock, jets: &[Jet], jet: &mut usize) {
+    fn drop_rock(&mut self, mut rock: Rock, jets: &[Jet], jet: &mut usize) -> usize {
         let gaps = 3 + rock.height;
         for _ in 0..gaps {
-            self.rows.push_front(Row::from(0));
+            self.rows.push_front(Row::new(0));
         }
 
         let mut y = 0;
@@ -348,7 +366,13 @@ impl Chamber {
         while self.rows.front().copied().is_some_and(Row::is_empty) {
             self.rows.pop_front();
         }
+
+        self.height()
     }
+}
+
+impl StateKey {
+    const LEN: usize = 30;
 }
 
 fn part1(jets: &[Jet]) -> usize {
@@ -364,8 +388,66 @@ fn part1(jets: &[Jet]) -> usize {
     chamber.height()
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(jets: &[Jet]) -> usize {
+    const ROCKS: usize = 1_000_000_000_000;
+
+    let mut state = HashMap::new();
+    let mut chamber = Chamber::new();
+    let mut jet = 0;
+
+    for (count, idx, rock) in Rock::VARIANTS
+        .into_iter()
+        .enumerate()
+        .cycle()
+        .take(ROCKS)
+        .enumerate()
+        .map(|(count, (idx, rock))| (count + 1, idx, rock))
+    {
+        let height = chamber.drop_rock(rock, jets, &mut jet);
+
+        if height >= StateKey::LEN {
+            let mut rows = chamber.rows.iter().copied();
+
+            match state.entry(StateKey {
+                rock: idx,
+                jet,
+                rows: array::from_fn(|_| rows.next().unwrap()),
+            }) {
+                Entry::Vacant(vacant) => {
+                    vacant.insert(State {
+                        rocks: count,
+                        height,
+                    });
+                }
+                Entry::Occupied(occupied) => {
+                    let &State {
+                        rocks: rocks_first_seen,
+                        height: height_first_seen,
+                    } = occupied.get();
+
+                    let cycle_rocks = count - rocks_first_seen;
+                    let cycle_height = height - height_first_seen;
+
+                    let remaining = ROCKS - count;
+                    let full_cycles = remaining / cycle_rocks;
+                    let leftover = remaining % cycle_rocks;
+
+                    for rock in Rock::VARIANTS
+                        .into_iter()
+                        .cycle()
+                        .skip(idx + 1)
+                        .take(leftover)
+                    {
+                        chamber.drop_rock(rock, jets, &mut jet);
+                    }
+
+                    return chamber.height() + (full_cycles * cycle_height);
+                }
+            }
+        }
+    }
+
+    chamber.height()
 }
 
 fn main() -> Result<()> {
@@ -385,11 +467,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&jets);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        // assert_eq!(part2, 0);
+        assert_eq!(part2, 1_585_632_183_915);
     };
 
     Ok(())
