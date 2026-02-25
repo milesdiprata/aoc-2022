@@ -98,145 +98,189 @@ impl State {
         }
     }
 
-    const fn is_ore_buildable(&self, blueprint: &Blueprint) -> bool {
-        self.ores >= blueprint.cost_ore_robot_ore as u16
-    }
-
-    const fn is_clay_buildable(&self, blueprint: &Blueprint) -> bool {
-        self.ores >= blueprint.cost_clay_robot_ore as u16
-    }
-
-    const fn is_obsidian_buildable(&self, blueprint: &Blueprint) -> bool {
-        self.ores >= blueprint.cost_obsidian_robot_ore as u16
-            && self.clays >= blueprint.cost_obsidian_robot_clay as u16
-    }
-
-    const fn is_geode_buildable(&self, blueprint: &Blueprint) -> bool {
-        self.ores >= blueprint.cost_geode_robot_ore as u16
-            && self.obsidians >= blueprint.cost_geode_robot_obsidian as u16
-    }
-
-    const fn is_ore_underproduced(&self, blueprint: &Blueprint) -> bool {
-        self.robots_ore < blueprint.cost_ore_max as u16
-    }
-
-    const fn is_clay_underproduced(&self, blueprint: &Blueprint) -> bool {
-        self.robots_clay < blueprint.cost_obsidian_robot_clay as u16
-    }
-
-    const fn is_obsidian_underproduced(&self, blueprint: &Blueprint) -> bool {
-        self.robots_obsidian < blueprint.cost_geode_robot_obsidian as u16
-    }
-
-    const fn collect(&self) -> Self {
+    const fn build_robot_ore(self) -> Self {
         Self {
-            minute: self.minute + 1,
-            ores: self.ores + self.robots_ore,
-            clays: self.clays + self.robots_clay,
-            obsidians: self.obsidians + self.robots_obsidian,
-            geodes: self.geodes + self.robots_geode,
-            ..*self
-        }
-    }
-
-    const fn build_ore(&self, blueprint: &Blueprint) -> Self {
-        Self {
-            ores: self.ores - blueprint.cost_ore_robot_ore as u16,
             robots_ore: self.robots_ore + 1,
-            ..*self
+            ..self
         }
     }
 
-    const fn build_clay(&self, blueprint: &Blueprint) -> Self {
+    const fn build_robot_clay(self) -> Self {
         Self {
-            ores: self.ores - blueprint.cost_clay_robot_ore as u16,
             robots_clay: self.robots_clay + 1,
-            ..*self
+            ..self
         }
     }
 
-    const fn build_obsidian(&self, blueprint: &Blueprint) -> Self {
+    const fn build_robot_obsidian(self) -> Self {
         Self {
-            ores: self.ores - blueprint.cost_obsidian_robot_ore as u16,
-            clays: self.clays - blueprint.cost_obsidian_robot_clay as u16,
             robots_obsidian: self.robots_obsidian + 1,
+            ..self
+        }
+    }
+
+    const fn build_robot_geode(self) -> Self {
+        Self {
+            robots_geode: self.robots_geode + 1,
+            ..self
+        }
+    }
+
+    fn advance(&self, dt: u8, ore_cost: u8, clay_cost: u8, obsidian_cost: u8) -> Self {
+        let minute = self.minute + dt;
+        let dt = u16::from(dt);
+
+        Self {
+            minute,
+            ores: self.ores + (self.robots_ore * dt) - u16::from(ore_cost),
+            clays: self.clays + (self.robots_clay * dt) - u16::from(clay_cost),
+            obsidians: self.obsidians + (self.robots_obsidian * dt) - u16::from(obsidian_cost),
+            geodes: self.geodes + (self.robots_geode * dt),
             ..*self
         }
     }
 
-    const fn build_geode(&self, blueprint: &Blueprint) -> Self {
-        Self {
-            ores: self.ores - blueprint.cost_geode_robot_ore as u16,
-            obsidians: self.obsidians - blueprint.cost_geode_robot_obsidian as u16,
-            robots_geode: self.robots_geode + 1,
-            ..*self
+    fn is_underproduced_ore(&self, bp: &Blueprint) -> bool {
+        self.robots_ore < u16::from(bp.cost_ore_max)
+    }
+
+    fn is_underproduced_clay(&self, bp: &Blueprint) -> bool {
+        self.robots_clay < u16::from(bp.cost_obsidian_robot_clay)
+    }
+
+    fn is_underproduced_obsidian(&self, bp: &Blueprint) -> bool {
+        self.robots_obsidian < u16::from(bp.cost_geode_robot_obsidian)
+    }
+
+    fn time_until_affordable_ore(&self, bp: &Blueprint) -> Option<u8> {
+        Self::time_until_affordable(self.ores, self.robots_ore, bp.cost_ore_robot_ore)
+    }
+
+    fn time_until_affordable_clay(&self, bp: &Blueprint) -> Option<u8> {
+        Self::time_until_affordable(self.ores, self.robots_ore, bp.cost_clay_robot_ore)
+    }
+
+    fn time_until_affordable_obsidian(&self, bp: &Blueprint) -> Option<u8> {
+        let ore =
+            Self::time_until_affordable(self.ores, self.robots_ore, bp.cost_obsidian_robot_ore)?;
+        let clay =
+            Self::time_until_affordable(self.clays, self.robots_clay, bp.cost_obsidian_robot_clay)?;
+
+        Some(ore.max(clay))
+    }
+
+    fn time_until_affordable_geode(&self, bp: &Blueprint) -> Option<u8> {
+        let ore = Self::time_until_affordable(self.ores, self.robots_ore, bp.cost_geode_robot_ore)?;
+        let obsidian = Self::time_until_affordable(
+            self.obsidians,
+            self.robots_obsidian,
+            bp.cost_geode_robot_obsidian,
+        )?;
+
+        Some(ore.max(obsidian))
+    }
+
+    fn time_until_affordable(have: u16, production: u16, cost: u8) -> Option<u8> {
+        let cost = u16::from(cost);
+
+        if have >= cost {
+            Some(0)
+        } else if production == 0 {
+            None
+        } else {
+            #[allow(clippy::cast_possible_truncation)]
+            Some(((cost - have).div_ceil(production)) as u8)
         }
     }
 }
 
-fn part1(blueprints: &[Blueprint]) -> u16 {
-    // Pruning strategies
-    //   1. Upper bound: If an optimistic upper bound cannot be beat, then
-    //   prune; assumes that we continue to make geode robots for the rest of
-    //   the remaining turns (triangular number)
-    //   2. Don't overproduce robots: do not build more robots of a type than
-    //   the maximum cost of that resource across all recipes
-    //   3. Always build a geode robot if possible: skip all other decision
-    //   branches when it is possible to build a geode robot
-    //   4. Prioritize building geode robots first: explore building geode
-    //   robot decision branch first so that strategy #1 has impact earlier
-    fn dfs(state: State, bp: &Blueprint, geodes_max: &mut u16) -> State {
-        const TIME: u8 = 24;
+fn dfs(state: &State, time: u8, bp: &Blueprint, best: &mut u16) -> u16 {
+    let remaining = u16::from(time - state.minute);
 
-        if state.minute >= TIME {
-            return state;
-        }
+    // If we build nothing else...
+    let geodes_final = state.geodes + (remaining * state.robots_geode);
+    *best = (*best).max(geodes_final);
 
-        let remaining = u16::from(TIME - state.minute);
-        let upper_bound =
-            state.geodes + (remaining * state.robots_geode) + ((remaining * (remaining - 1)) / 2);
-        if *geodes_max >= upper_bound {
-            return state;
-        }
-
-        let build_geode = state.is_geode_buildable(bp);
-        let build_ore =
-            !build_geode && state.is_ore_buildable(bp) && state.is_ore_underproduced(bp);
-        let build_clay =
-            !build_geode && state.is_clay_buildable(bp) && state.is_clay_underproduced(bp);
-        let build_obsidian =
-            !build_geode && state.is_obsidian_buildable(bp) && state.is_obsidian_underproduced(bp);
-
-        let state = state.collect();
-        let states = [
-            build_geode.then(|| state.build_geode(bp)),
-            build_ore.then(|| state.build_ore(bp)),
-            build_clay.then(|| state.build_clay(bp)),
-            build_obsidian.then(|| state.build_obsidian(bp)),
-            (!build_geode).then_some(state),
-        ];
-
-        let best = states
-            .into_iter()
-            .flatten()
-            .map(|state| dfs(state, bp, geodes_max))
-            .max_by_key(|state| state.geodes)
-            .unwrap();
-
-        *geodes_max = (*geodes_max).max(best.geodes);
-
-        best
+    // Upper bound pruning
+    let upper = geodes_final + ((remaining * (remaining - 1)) / 2);
+    if *best >= upper {
+        return geodes_final;
     }
+
+    let mut geodes_max = geodes_final;
+
+    if let Some(wait) = state.time_until_affordable_geode(bp) {
+        let dt = wait + 1;
+        if state.minute + dt < time {
+            let next = state
+                .advance(dt, bp.cost_geode_robot_ore, 0, bp.cost_geode_robot_obsidian)
+                .build_robot_geode();
+            geodes_max = geodes_max.max(self::dfs(&next, time, bp, best));
+        }
+    }
+
+    if state.is_underproduced_obsidian(bp)
+        && let Some(wait) = state.time_until_affordable_obsidian(bp)
+    {
+        let dt = wait + 1;
+        if state.minute + dt < time {
+            let next = state
+                .advance(
+                    dt,
+                    bp.cost_obsidian_robot_ore,
+                    bp.cost_obsidian_robot_clay,
+                    0,
+                )
+                .build_robot_obsidian();
+            geodes_max = geodes_max.max(self::dfs(&next, time, bp, best));
+        }
+    }
+
+    if state.is_underproduced_clay(bp)
+        && let Some(wait) = state.time_until_affordable_clay(bp)
+    {
+        let dt = wait + 1;
+        if state.minute + dt < time {
+            let next = state
+                .advance(dt, bp.cost_clay_robot_ore, 0, 0)
+                .build_robot_clay();
+            geodes_max = geodes_max.max(dfs(&next, time, bp, best));
+        }
+    }
+
+    if state.is_underproduced_ore(bp)
+        && let Some(wait) = state.time_until_affordable_ore(bp)
+    {
+        let dt = wait + 1;
+        if state.minute + dt < time {
+            let next = state
+                .advance(dt, bp.cost_ore_robot_ore, 0, 0)
+                .build_robot_ore();
+            geodes_max = geodes_max.max(dfs(&next, time, bp, best));
+        }
+    }
+
+    geodes_max
+}
+
+fn part1(blueprints: &[Blueprint]) -> u16 {
+    const TIME: u8 = 24;
 
     blueprints
         .iter()
-        .map(|blueprint| (blueprint.id, dfs(State::new(), blueprint, &mut 0).geodes))
+        .map(|bp| (bp.id, self::dfs(&State::new(), TIME, bp, &mut 0)))
         .map(|(id, geodes)| u16::from(id) * geodes)
         .sum()
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(blueprints: &[Blueprint]) -> u16 {
+    const TIME: u8 = 32;
+
+    blueprints
+        .iter()
+        .take(3)
+        .map(|bp| self::dfs(&State::new(), TIME, bp, &mut 0))
+        .product()
 }
 
 fn main() -> Result<()> {
@@ -256,11 +300,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&blueprints);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 5_824);
     };
 
     Ok(())
