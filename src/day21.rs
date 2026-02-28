@@ -100,33 +100,132 @@ impl Operator {
     }
 }
 
+fn dfs<'a>(
+    jobs: &'a HashMap<String, Job>,
+    monkey: &'a str,
+    cache: &mut HashMap<&'a str, i64>,
+) -> i64 {
+    if let Some(&num) = cache.get(monkey) {
+        return num;
+    }
+
+    let num = match &jobs[monkey] {
+        &Job::Num(num) => num,
+        Job::Operation { lhs, rhs, op } => {
+            op.eval(self::dfs(jobs, lhs, cache), self::dfs(jobs, rhs, cache))
+        }
+    };
+
+    cache.insert(monkey, num);
+    num
+}
+
 fn part1(jobs: &HashMap<String, Job>) -> i64 {
-    fn dfs<'a>(
+    let mut cache = HashMap::new();
+    self::dfs(jobs, "root", &mut cache)
+}
+
+fn part2(jobs: &HashMap<String, Job>) -> i64 {
+    fn is_dependent_on_humn<'a>(
         jobs: &'a HashMap<String, Job>,
         monkey: &'a str,
-        cache: &mut HashMap<&'a str, i64>,
-    ) -> i64 {
-        if let Some(&num) = cache.get(monkey) {
-            return num;
+        cache: &mut HashMap<&'a str, bool>,
+    ) -> bool {
+        if let Some(&dependent) = cache.get(monkey) {
+            return dependent;
         }
 
-        let num = match &jobs[monkey] {
-            &Job::Num(num) => num,
-            Job::Operation { lhs, rhs, op } => {
-                op.eval(dfs(jobs, lhs, cache), dfs(jobs, rhs, cache))
+        if monkey == "humn" {
+            return true;
+        }
+
+        let dependent = match &jobs[monkey] {
+            Job::Num(_) => false,
+            Job::Operation { lhs, rhs, .. } => {
+                is_dependent_on_humn(jobs, lhs, cache) || is_dependent_on_humn(jobs, rhs, cache)
             }
         };
 
-        cache.insert(monkey, num);
-        num
+        cache.insert(monkey, dependent);
+        dependent
     }
 
-    let mut cache = HashMap::new();
-    dfs(jobs, "root", &mut cache)
-}
+    fn dfs_inverse<'a>(
+        jobs: &'a HashMap<String, Job>,
+        monkey: &'a str,
+        target: i64,
+        cache_dependent: &mut HashMap<&'a str, bool>,
+        cache_dfs: &mut HashMap<&'a str, i64>,
+    ) -> i64 {
+        if monkey == "humn" {
+            return target;
+        }
 
-fn part2() -> u64 {
-    todo!()
+        let Job::Operation { lhs, rhs, op } = &jobs[monkey] else {
+            unreachable!();
+        };
+
+        let dependent = if cache_dependent
+            .get(lhs.as_str())
+            .is_some_and(|&dependent| dependent)
+        {
+            lhs
+        } else if cache_dependent
+            .get(rhs.as_str())
+            .is_some_and(|&dependent| dependent)
+        {
+            rhs
+        } else if is_dependent_on_humn(jobs, lhs, cache_dependent) {
+            lhs
+        } else if is_dependent_on_humn(jobs, rhs, cache_dependent) {
+            rhs
+        } else {
+            unreachable!();
+        };
+
+        let target_new = if dependent == lhs {
+            let rhs = self::dfs(jobs, rhs, cache_dfs);
+            match op {
+                Operator::Add => target - rhs,
+                Operator::Sub => target + rhs,
+                Operator::Mul => target / rhs,
+                Operator::Div => target * rhs,
+            }
+        } else {
+            let lhs = self::dfs(jobs, lhs, cache_dfs);
+            match op {
+                Operator::Add => target - lhs,
+                Operator::Sub => lhs - target,
+                Operator::Mul => target / lhs,
+                Operator::Div => lhs / target,
+            }
+        };
+
+        dfs_inverse(jobs, dependent, target_new, cache_dependent, cache_dfs)
+    }
+
+    let Job::Operation { lhs, rhs, .. } = &jobs["root"] else {
+        unreachable!();
+    };
+
+    let mut cache_dependent = HashMap::new();
+    let mut cache_dfs = HashMap::new();
+
+    let (dependent, target) = if is_dependent_on_humn(jobs, lhs, &mut cache_dependent) {
+        (lhs, self::dfs(jobs, rhs, &mut cache_dfs))
+    } else if is_dependent_on_humn(jobs, rhs, &mut cache_dependent) {
+        (rhs, self::dfs(jobs, lhs, &mut cache_dfs))
+    } else {
+        unreachable!();
+    };
+
+    dfs_inverse(
+        jobs,
+        dependent,
+        target,
+        &mut cache_dependent,
+        &mut cache_dfs,
+    )
 }
 
 fn main() -> Result<()> {
@@ -149,11 +248,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&jobs);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 3_757_272_361_782);
     };
 
     Ok(())
