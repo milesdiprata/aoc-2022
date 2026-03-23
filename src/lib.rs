@@ -1,3 +1,8 @@
+use std::ops::Add;
+use std::ops::AddAssign;
+use std::ops::Sub;
+use std::ops::SubAssign;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Pos<T> {
     x: T,
@@ -21,6 +26,54 @@ where
     #[must_use]
     pub const fn y(self) -> T {
         self.y
+    }
+}
+
+impl<T> Add<Self> for Pos<T>
+where
+    T: Add<T, Output = T>,
+{
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl<T> AddAssign<Self> for Pos<T>
+where
+    T: AddAssign<T>,
+{
+    fn add_assign(&mut self, rhs: Self) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+    }
+}
+
+impl<T> Sub<Self> for Pos<T>
+where
+    T: Sub<T, Output = T>,
+{
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+
+impl<T> SubAssign<Self> for Pos<T>
+where
+    T: SubAssign<T>,
+{
+    fn sub_assign(&mut self, rhs: Self) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
     }
 }
 
