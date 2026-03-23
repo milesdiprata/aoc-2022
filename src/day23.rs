@@ -17,7 +17,7 @@ enum Dir {
     West,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Grove {
     elves: HashSet<Pos<i64>>,
     dir_idx: usize,
@@ -140,9 +140,10 @@ impl Grove {
         Dir::iter().cycle().skip(self.dir_idx).take(Dir::LEN)
     }
 
-    fn simulate_round(&mut self) {
+    fn simulate_round(&mut self) -> bool {
         let mut proposals = Vec::with_capacity(self.elves.len());
         let mut counts = HashMap::with_capacity(self.elves.len());
+        let mut moved = false;
 
         for &elf in &self.elves {
             if !self
@@ -167,10 +168,13 @@ impl Grove {
             if counts.get(&to).is_some_and(|&count| count == 1) {
                 self.elves.remove(&from);
                 self.elves.insert(to);
+                moved = true;
             }
         }
 
         self.dir_idx = (self.dir_idx + 1) % Dir::LEN;
+
+        moved
     }
 }
 
@@ -185,14 +189,21 @@ fn part1(grove: &mut Grove) -> u64 {
     area.cast_unsigned() - grove.elves.len() as u64
 }
 
-fn part2() -> u64 {
-    todo!()
+fn part2(grove: &mut Grove) -> usize {
+    let mut round = 1;
+
+    while grove.simulate_round() {
+        round += 1;
+    }
+
+    round
 }
 
 fn main() -> Result<()> {
     let mut grove = Grove::from_str(&fs::read_to_string("in/day23.txt")?)?;
 
     {
+        let mut grove = grove.clone();
         let start = Instant::now();
         let part1 = self::part1(&mut grove);
         let elapsed = Instant::now().duration_since(start);
@@ -203,11 +214,11 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part2 = self::part2();
+        let part2 = self::part2(&mut grove);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 2: {part2} ({elapsed:?})");
-        assert_eq!(part2, 0);
+        assert_eq!(part2, 903);
     };
 
     Ok(())
