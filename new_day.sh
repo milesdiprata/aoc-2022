@@ -48,7 +48,7 @@ fn main() -> Result<()> {
     {
         let start = Instant::now();
         let part1 = self::part1();
-        let elapsed = Instant::now().duration_since(start);
+        let elapsed = start.elapsed();
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 0);
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     {
         let start = Instant::now();
         let part2 = self::part2();
-        let elapsed = Instant::now().duration_since(start);
+        let elapsed = start.elapsed();
 
         println!("Part 2: {part2} ({elapsed:?})");
         assert_eq!(part2, 0);
