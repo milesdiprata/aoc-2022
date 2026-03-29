@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::fmt::Write;
 use std::fs;
 use std::ops::Range;
@@ -10,6 +12,96 @@ use anyhow::anyhow;
 use anyhow::bail;
 
 use aoc_2022::Pos;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct Vec3([i32; 3]);
+
+const PX: Vec3 = Vec3([1, 0, 0]);
+const PY: Vec3 = Vec3([0, 1, 0]);
+const PZ: Vec3 = Vec3([0, 0, 1]);
+
+impl Vec3 {
+    const fn cross(self, other: Self) -> Self {
+        Self([
+            self.0[1] * other.0[2] - self.0[2] * other.0[1],
+            self.0[2] * other.0[0] - self.0[0] * other.0[2],
+            self.0[0] * other.0[1] - self.0[1] * other.0[0],
+        ])
+    }
+}
+
+impl std::ops::Neg for Vec3 {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self([-self.0[0], -self.0[1], -self.0[2]])
+    }
+}
+
+impl std::ops::Add for Vec3 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self([
+            self.0[0] + rhs.0[0],
+            self.0[1] + rhs.0[1],
+            self.0[2] + rhs.0[2],
+        ])
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FaceOrientation {
+    normal: Vec3,
+    right: Vec3,
+    down: Vec3,
+}
+
+impl FaceOrientation {
+    fn fold(self, grid_dir: Direction) -> Self {
+        let o = match grid_dir {
+            Direction::Right => Self {
+                normal: self.right,
+                right: -self.normal,
+                down: self.down,
+            },
+            Direction::Left => Self {
+                normal: -self.right,
+                right: self.normal,
+                down: self.down,
+            },
+            Direction::Down => Self {
+                normal: self.down,
+                right: self.right,
+                down: -self.normal,
+            },
+            Direction::Up => Self {
+                normal: -self.down,
+                right: self.right,
+                down: self.normal,
+            },
+        };
+
+        debug_assert_eq!(o.normal, o.right.cross(o.down));
+        o
+    }
+
+    fn tangent(self, dir: Direction) -> Vec3 {
+        match dir {
+            Direction::Up => -self.down,
+            Direction::Down => self.down,
+            Direction::Left => -self.right,
+            Direction::Right => self.right,
+        }
+    }
+
+    const fn along_edge(self, dir: Direction) -> Vec3 {
+        match dir {
+            Direction::Up | Direction::Down => self.right,
+            Direction::Left | Direction::Right => self.down,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 enum Tile {
@@ -274,13 +366,9 @@ impl TryFrom<Board> for Cube {
 
     fn try_from(board: Board) -> Result<Self> {
         let face_size = Self::compute_face_size(&board);
-        dbg!(face_size);
         let faces = Self::compute_faces(&board, face_size)?;
-        dbg!(&faces);
-        let edges = Self::compute_adj_edges(&faces);
-        dbg!(&edges);
-        let edges = Self::compute_fold_edges(edges)?;
-        dbg!(&edges);
+        let orientations = Self::compute_orientations(&faces)?;
+        let edges = Self::compute_edges_from_3d(&orientations)?;
 
         Ok(Self {
             board,
@@ -400,128 +488,117 @@ impl Cube {
             .map_err(|len| anyhow!("expected 6 faces but found {len}"))
     }
 
-    fn compute_adj_edges(
+    fn compute_orientations(
         faces: &[Face; Self::FACE_LEN],
-    ) -> [[Option<Edge>; Direction::LEN]; Self::FACE_LEN] {
-        let mut edges = [[None; Direction::LEN]; Self::FACE_LEN];
+    ) -> Result<[FaceOrientation; Self::FACE_LEN]> {
+        let mut orientations: [Option<FaceOrientation>; Self::FACE_LEN] = [None; Self::FACE_LEN];
+        orientations[0] = Some(FaceOrientation {
+            normal: PZ,
+            right: PX,
+            down: PY,
+        });
 
-        for (i, a) in faces.iter().enumerate() {
-            for (j, b) in faces.iter().enumerate() {
-                if i == j {
+        let mut queue = VecDeque::new();
+        queue.push_back(0usize);
+
+        let grid_neighbor = |grid: Pos<usize>, dir: Direction| match dir {
+            Direction::Up => grid.up(),
+            Direction::Right => grid.right(),
+            Direction::Down => grid.down(),
+            Direction::Left => grid.left(),
+        };
+
+        while let Some(a) = queue.pop_front() {
+            let orient_a = orientations[a].unwrap();
+            let grid_a = faces[a].grid;
+
+            for dir in [
+                Direction::Up,
+                Direction::Right,
+                Direction::Down,
+                Direction::Left,
+            ] {
+                let Some(neighbor) = grid_neighbor(grid_a, dir) else {
                     continue;
-                }
+                };
 
-                // B is directly to the right of A in grid
-                if a.grid.y() == b.grid.y()
-                    && a.grid.right().is_some_and(|right| right.x() == b.grid.x())
+                if let Some(b) = faces.iter().position(|f| f.grid == neighbor)
+                    && orientations[b].is_none()
                 {
-                    edges[i][Direction::Right as usize] = Some(Edge {
-                        idx: j,
-                        dir: Direction::Right,
-                        coord_flipped: false,
-                    });
-                    edges[j][Direction::Left as usize] = Some(Edge {
-                        idx: i,
-                        dir: Direction::Left,
-                        coord_flipped: false,
-                    });
-                }
-
-                // B is directly below A in grid
-                if a.grid.x() == b.grid.x()
-                    && a.grid.down().is_some_and(|down| down.y() == b.grid.y())
-                {
-                    edges[i][Direction::Down as usize] = Some(Edge {
-                        idx: j,
-                        dir: Direction::Down,
-                        coord_flipped: false,
-                    });
-                    edges[j][Direction::Up as usize] = Some(Edge {
-                        idx: i,
-                        dir: Direction::Up,
-                        coord_flipped: false,
-                    });
+                    orientations[b] = Some(orient_a.fold(dir));
+                    queue.push_back(b);
                 }
             }
         }
 
-        edges
+        let result: Vec<FaceOrientation> = orientations
+            .into_iter()
+            .map(|o| o.ok_or_else(|| anyhow!("disconnected face")))
+            .collect::<Result<_>>()?;
+
+        debug_assert_eq!(
+            result
+                .iter()
+                .map(|o| o.normal)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            6,
+            "all 6 normals must be distinct"
+        );
+
+        result
+            .try_into()
+            .map_err(|_| anyhow!("unexpected face count"))
     }
 
-    fn compute_fold_edges(
-        mut edges: [[Option<Edge>; Direction::LEN]; Self::FACE_LEN],
+    fn compute_edges_from_3d(
+        orientations: &[FaceOrientation; Self::FACE_LEN],
     ) -> Result<[[Edge; Direction::LEN]; Self::FACE_LEN]> {
-        fn propagate(edges: &mut [[Option<Edge>; Direction::LEN]; Cube::FACE_LEN]) -> bool {
-            let mut changed = false;
-            for f in 0..6 {
-                for d1 in [
-                    Direction::Up,
-                    Direction::Right,
-                    Direction::Down,
-                    Direction::Left,
-                ] {
-                    let d2 = d1.turn(Orientation::Right); // adjacent clockwise direction
+        let all_dirs = [
+            Direction::Up,
+            Direction::Right,
+            Direction::Down,
+            Direction::Left,
+        ];
 
-                    let Some((
-                        Edge {
-                            idx: idx1,
-                            dir: enter1,
-                            coord_flipped: flip1,
-                        },
-                        Edge {
-                            idx: idx2,
-                            dir: enter2,
-                            coord_flipped: flip2,
-                        },
-                    )) = edges[f][d1 as usize].zip(edges[f][d2 as usize])
-                    else {
-                        continue;
-                    };
-
-                    // On face N1, the edge "clockwise from e1" should connect to N2
-                    // On face N2, the edge "counter-clockwise from e2" should connect to N1
-                    let idx1_edge = if flip1 {
-                        enter1.turn(Orientation::Left)
-                    } else {
-                        enter1.turn(Orientation::Right)
-                    };
-                    let idx2_edge = if flip2 {
-                        enter2.turn(Orientation::Right)
-                    } else {
-                        enter2.turn(Orientation::Left)
-                    };
-
-                    let rev = flip1 != flip2; // XOR — reversal propagates
-
-                    if edges[idx1][idx1_edge as usize].is_none() {
-                        edges[idx1][idx1_edge as usize] = Some(Edge {
-                            idx: idx2,
-                            dir: idx2_edge.opposite(),
-                            coord_flipped: rev,
-                        });
-                        changed = true;
-                    }
-
-                    if edges[idx2][idx2_edge as usize].is_none() {
-                        edges[idx2][idx2_edge as usize] = Some(Edge {
-                            idx: idx1,
-                            dir: idx1_edge.opposite(),
-                            coord_flipped: rev,
-                        });
-                        changed = true;
-                    }
-                }
+        let mut edge_map: HashMap<Vec3, Vec<(usize, Direction)>> = HashMap::new();
+        for (f, orient) in orientations.iter().enumerate() {
+            for &d in &all_dirs {
+                let edge_mid = orient.normal + orient.tangent(d);
+                edge_map.entry(edge_mid).or_default().push((f, d));
             }
-
-            changed
         }
 
-        while propagate(&mut edges) {}
+        let mut edges = [[None::<Edge>; Direction::LEN]; Self::FACE_LEN];
+
+        for entries in edge_map.values() {
+            if entries.len() != 2 {
+                bail!("expected exactly 2 faces per edge, found {}", entries.len());
+            }
+
+            let (f1, d1) = entries[0];
+            let (f2, d2) = entries[1];
+
+            let along1 = orientations[f1].along_edge(d1);
+            let along2 = orientations[f2].along_edge(d2);
+            let coord_flipped = along1 == -along2;
+
+            edges[f1][d1 as usize] = Some(Edge {
+                idx: f2,
+                dir: d2.opposite(),
+                coord_flipped,
+            });
+            edges[f2][d2 as usize] = Some(Edge {
+                idx: f1,
+                dir: d1.opposite(),
+                coord_flipped,
+            });
+        }
 
         edges
             .into_iter()
-            .map(|edges| {
-                edges
+            .map(|face_edges| {
+                face_edges
                     .map(|e| e.ok_or_else(|| anyhow!("missing edge")))
                     .into_iter()
                     .collect::<Result<Vec<_>>>()?
@@ -531,6 +608,51 @@ impl Cube {
             .collect::<Result<Vec<_>>>()?
             .try_into()
             .map_err(|_| anyhow!("unexpected face count"))
+    }
+
+    fn step(
+        &self,
+        pos: Pos<usize>,
+        dir: Direction,
+        face_idx: usize,
+    ) -> Option<(Pos<usize>, Direction, usize)> {
+        let face = &self.faces[face_idx];
+        let lx = pos.x() - face.origin.x();
+        let ly = pos.y() - face.origin.y();
+        let s = self.face_size;
+
+        let (nlx, nly, new_dir, new_face) = match dir {
+            Direction::Right if lx + 1 < s => (lx + 1, ly, dir, face_idx),
+            Direction::Left if lx > 0 => (lx - 1, ly, dir, face_idx),
+            Direction::Down if ly + 1 < s => (lx, ly + 1, dir, face_idx),
+            Direction::Up if ly > 0 => (lx, ly - 1, dir, face_idx),
+            _ => {
+                let edge = &self.edges[face_idx][dir as usize];
+                let c = match dir {
+                    Direction::Up | Direction::Down => lx,
+                    Direction::Left | Direction::Right => ly,
+                };
+                let c = if edge.coord_flipped { s - 1 - c } else { c };
+                let new_dir = edge.dir;
+                let (nlx, nly) = match new_dir {
+                    Direction::Right => (0, c),
+                    Direction::Left => (s - 1, c),
+                    Direction::Down => (c, 0),
+                    Direction::Up => (c, s - 1),
+                };
+                (nlx, nly, new_dir, edge.idx)
+            }
+        };
+
+        let new_pos = Pos::new(
+            self.faces[new_face].origin.x() + nlx,
+            self.faces[new_face].origin.y() + nly,
+        );
+
+        self.board
+            .get(new_pos)
+            .is_some_and(Tile::is_open)
+            .then_some((new_pos, new_dir, new_face))
     }
 }
 
@@ -564,9 +686,37 @@ fn part1(board: &Board, path: &Path) -> usize {
     (4 * (pos.x() + 1)) + (1_000 * (pos.y() + 1)) + usize::from(u8::from(dir))
 }
 
-fn part2(cube: &Cube, path: &Path) -> u64 {
-    println!("{cube}");
-    todo!()
+fn part2(cube: &Cube, path: &Path) -> usize {
+    let (mut pos, mut dir) = cube.board.start().unwrap();
+    let mut face_idx = cube
+        .faces
+        .iter()
+        .position(|f| {
+            pos.x() >= f.origin.x()
+                && pos.x() < f.origin.x() + cube.face_size
+                && pos.y() >= f.origin.y()
+                && pos.y() < f.origin.y() + cube.face_size
+        })
+        .unwrap();
+
+    for &instr in &path.instructions {
+        match instr {
+            Instruction::Move(steps) => {
+                for _ in 0..steps {
+                    if let Some((new_pos, new_dir, new_face)) = cube.step(pos, dir, face_idx) {
+                        pos = new_pos;
+                        dir = new_dir;
+                        face_idx = new_face;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            Instruction::Turn(turn) => dir = dir.turn(turn),
+        }
+    }
+
+    (4 * (pos.x() + 1)) + (1_000 * (pos.y() + 1)) + usize::from(u8::from(dir))
 }
 
 fn main() -> Result<()> {
@@ -583,7 +733,6 @@ fn main() -> Result<()> {
 
     {
         let cube = Cube::try_from(board)?;
-        println!("{cube}");
         let start = Instant::now();
         let part2 = self::part2(&cube, &path);
         let elapsed = Instant::now().duration_since(start);
